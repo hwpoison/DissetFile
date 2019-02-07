@@ -4,4 +4,4 @@ software de recuperación de archivos "file recovery".
 Faltan añadir mas funcionalidades.
 
 
-![alt text](https://raw.githubusercontent.com/srbill1996/DissetFile/master/logo.png)
+  ![Image](https://raw.githubusercontent.com/srbill1996/DissetFile/master/logo.png)
