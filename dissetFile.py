@@ -16,7 +16,7 @@ gadgetConversacion.innerHTML+="<div id='caja-conteiner'>"+
 
 var actualMessageAmount = 0
 var maxMessageBox = 5
-var responseTime = aMilisegundos(0)//aMilisegundos(1.5)
+var responseTime = aMilisegundos(1.5)
 var mutedTime = aMilisegundos(30)
 var userInputBox = document.getElementById('entradaDeUsuario')
 var messageBox = document.getElementById('messageBox')
