@@ -1,374 +1,211 @@
-/* minimalBot rev3 - code by srbill1990 */
+import re
+import os
+import sys
+import time
 
-lobuloTemporal = {
-	'conteoError' : 0,
-	'conteoRepeticion' : 0,
-	'ultimoMensaje':[]
-}
+__autor__ = "srbill1996"
+__version__ = "0.0.2"
 
-gadgetConversacion = document.getElementById("mbotConversacion")
-
-gadgetConversacion.innerHTML+="<div id='caja-conteiner'>"+
-							  "<input id='entradaDeUsuario' type='text' spellcheck='true' placeholder='Escriba algo..'>"+
-							  "<div id='messageBox'></div>"+
-							  "</div>"+
-							  "<div id='notificacionEscritura'></div>"
-
-var actualMessageAmount = 0
-var maxMessageBox = 5
-var responseTime = aMilisegundos(1.5)
-var mutedTime = aMilisegundos(30)
-var userInputBox = document.getElementById('entradaDeUsuario')
-var messageBox = document.getElementById('messageBox')
-var typingNotification = document.getElementById('notificacionEscritura')
-
-var DEBUG = true
-var DB_MBOT = minDb	  	
-
-//Deteccion de la tecla enter
-userInputBox.addEventListener("keyup", function(event) {
-  event.preventDefault();
-  if (event.keyCode === 13) {
-	reply()
-	userInputBox.value = ""
-  }
-});
-
-
-//retorna milesegundos de una cantidad especifica de segundos
-function aMilisegundos(seconds){
-	return seconds*1000
-}
-
-function getKeys(dict){
-	return Object.keys(dict)
-}
-
-function printf(mensaje){
-	console.log(mensaje)
-}
-
-function randomItem(array){
-	/* 
-		Return random item in array 
-	*/
-	return array[Math.floor(Math.random() * (0 - array.length)) + array.length]
-}
-	
-//Mensaje aleatorio de lista
-function randomAnswer(answer_desc){
-	array = ''
-	if(answer_desc != 'aleatorio'){
-		array = DB_MBOT[answer_desc]
-		//si detecta un valor de referencia
-		if(array[0][0] == '*' && array[0].slice(1) in DB_MBOT)
-			array = DB_MBOT[array[0].slice(1)]
-	}else{
-		db =  getKeys(DB_MBOT)
-		//retorna una pregunta aleatoria
-		while(true){
-			array = randomItem(db)
-			if(array[0] == 'p'){
-				array = DB_MBOT[array]
-				break
-			}
-		}
-	}
-	return randomItem(array)
-}
-
-
-//Filtra los caracteres especiales y los separa para poder manipularlos.
-//. revisar separacion de caracteres especiales
-function filterString(string){
-		special_characters = ['?', '!', '.', ',']
-		special_characters = []
-		if(string[0] != "+")//conservar mayusculas originales
-			 process_string = string.toLowerCase()
-		else
-			process_string = string.replace('+','')
-		final_string = process_string.split(/\s+/).join(' ').trim()
-		for(e=0; e < special_characters.length; e++)
-			final_string = final_string.replace(special_characters[e], ' ' + special_characters[e])	
-		//Se filtran algunas acentuaciones previsoriamente
-		with_tick = ['á','é','í','ó','ú']
-		without_tick = ['a','e','i','o','u']
-		for(e=0; e < with_tick.length; e++)
-			final_string = final_string.replace(with_tick[e], without_tick[e])	
-		return final_string
-		//ej: 'hóla!' > 'hola !' 
-}
-
-
-
-function returnAnswer(answer_desc){
-	/* search and return random answer with the same descriptcion 
-		answer_desc:bienvenida -> random:[che, hola, ...]
-	*/
-	db = getKeys(DB_MBOT)
-	for(i=0; i < db.length; i++){
-		dbp = db[i].split('-')
-		if(dbp[0] == 'respuesta' && dbp[1] == answer_desc){
-			return randomItem(DB_MBOT[db[i]]);
-		}
-	}
-}
-
-function strStrSec(word0, word1){
-	/* sequencial
-		[holaaaa, hola] -> ho hol hola > hola
-	*/
-	word_buffer = []
-	for(letter=0; letter < word0.length; letter++){
-		word_buffer.push(word0[letter])
-		if(word_buffer.join('') == word1)
-			return true
-	}
-	return false
-}
-
-function strStr(words , string){
-	/* comoooo estaasss? -> como estas?*/
-	words_array = words.split(' ')
-	string_array = string.split(' ')
-	cout = 0
-	if(words_array.length < string_array.length)
-		return false
-	for(i=0; i < string_array.length; i++){
-		if(strStrSec(words_array[i], string_array[i]))
-			cout++;
-	}
-	return cout
-}
-
-
-function dbSearchWord(word, indiceEspecifico=false){
-	/*
-		Searches for matches in the database of some specific word
-	*/
-	candidates = {}
-	dbDir = indiceEspecifico ? getKeys(indiceEspecifico) : getKeys(DB_MBOT)
-	for(key_pos=0; key_pos < dbDir.length; key_pos++){
-		//Se entra por keys en la base de datos
-		key_index = dbDir[key_pos] //key
-		answers = DB_MBOT[key_index] //values
-		if(answers != undefined){
-			//escanea cada pregunta dentro de la lista
-			for(answer_index=0; answer_index < answers.length; answer_index++){	
-				if(key_index.split('-')[0] == 'respuesta') break
-				answer = answers[answer_index]
-				scan = strStr(word, answer)
-				if(answer == word)
-					candidates[key_index] = [key_index, answer_index, word]
-				if(scan && scan == word.split(' ').length)
-					candidates[key_index] = [key_index, answer_index, word]
-			}
-		}
-	}
-	if(Object.keys(candidates).length > 0)
-		return candidates
-	else
-		return false
-}
-
-function mergeDict(from, to){
-	/* Update/Extends dict from other dict */
-	from_keys = getKeys(from)
-	for(i=0; i<from_keys.length; i++){
-		to[getKeys(to).length] = from[from_keys[i]]
-	}
-}
-
-function analysisSentence(sentence){
-	/*
-		Look for several matches in a sentence and return dict with
-		types.
-	*/
-	sentence = filterString(sentence).split(' ')
-	sentence.push('\0')
-	sentence_chunck = []
-	last_analysis = false
-	founds = {}
-	word_count = 0;
-	do {
-		sentence_chunck.push(sentence[word_count])
-		procString = filterString(sentence_chunck.join(' '))
-		analysis = dbSearchWord(procString)
-		if(!last_analysis){
-			if(analysis)
-				last_analysis = analysis
-		}else{
-			if(analysis){
-				last_analysis = analysis
-			}else{
-				if(last_analysis){
-					mergeDict(last_analysis, founds)
-					sentence_chunck = []
-					last_analysis = false
-					word_count--;
-				}
-			}
-		}
-
-	}while(word_count++ < sentence.length)
-
-	if(Object.keys(founds).length > 0)
-		return founds
-	else
-		return {0:["error-null"]}
-
-}
-
-function procesarComando(comando){
-	/*controla el sistema de comandos*/
-	switch(comando){
-		case '#clear':
-			emptyMessageBox()
-			console.clear()
-			return '...';
-		case '#olvidar':
-			forgetConversation()
-			return randomAnswer("pregunta-existencial")
-		case '#DEBUG':
-			if(DEBUG == false){
-				DEBUG = true
-				return "Depuracion Activada"
-			}else{
-				DEBUG = false
-				return "Depuracion Desactivada"
-		}
-	}
-}
-function forgetConversation(){
-	lobuloTemporal["ultimoMensaje"] = [];
-}
-
-
-//reply por un tipo de mensaje.
-function processMessage(message){
-	//itera sobre el mensaje, analiza, itera sobre el analisis y efectua
-	sentence_analysis = analysisSentence(message)
-	analysis_keys = getKeys(sentence_analysis)
-	final_answer = []
-	if(DEBUG){
-		console.log("===================");
-		console.log("Mensaje:", message)
-		for(i=0;i < analysis_keys.length; i++){
-			console.log("Analisis:", sentence_analysis[i])
-		}
+SCRIPT_FILE = {
+		"png":{
+				'start':b'\x89\x50\x4E\x47',  
+				'end':b'\x49\x45\x4E\x44\xAE\x42\x60\x82',
+				"script":"""SIGNATURE(start)\nSIGNATURE(end)
+				"""
+		},
+		"bmp":{
+				'start':b'\x42\x4D',  
+				"script":"""SIGNATURE(start)\nFSEGMENT(2,4, little)
+				"""
+		},
+		"ogg":{
+				'start':"no"
+		},
 		
-	}
+}
+"""Instrucciones:
+	SIGNATURE(signature):Detecta una firma en especifico y determina la ubicación dentro del fichero.
+	FSEGMENT(x,y, endless_type):Localiza el segment y realiza una suma
+"""
 
-	for(s_pos=0; s_pos < analysis_keys.length; s_pos++){
-		sentence_key = sentence_analysis[s_pos][0]
-		key_info = sentence_key.split("-")
-		sentence_type = key_info[0]
-		sentence_info = key_info[1]
-		//Revisar si el usuario ya dijo la misma cosa consecutivamente (por tipo de expresion)
-		if(lobuloTemporal["ultimoMensaje"].join('').includes(sentence_key)){
-			final_answer.push(randomAnswer('respuesta-repeticion'))
-			forgetConversation()
-		}else{
-			forgetConversation();
-		}
-		lobuloTemporal['ultimoMensaje'].push(sentence_key)
-		
-		//controlar funciones especiales
-		switch(sentence_type){
-			case 'saludo':
-				final_answer.push(randomAnswer('saludo-'+sentence_info))
-				break
-			case 'error':
-				lobuloTemporal['conteoError']++;
-				if(lobuloTemporal['conteoError'] > 4){
-					lobuloTemporal['conteoError'] = 0;
-					return randomAnswer('respuesta-discusion')
-				}else{
-					return randomAnswer('respuesta-desconocido')
-				}
-			case 'accion':
-				switch(sentence_info){
-					case 'comando':
-						return procesarComando(message)
-					case 'hora':
-						hora = new Date()
-						return returnAnswer(sentence_info) + hora.getHours() + " y " + hora.getMinutes() + " minutos."
-					case 'buscar':
-						queryBusqueda = "search?q="
-						key = analisis[s_pos][0]
-						posicion = analisis[s_pos][1]
-						itemBuscar = filterString(message.replace(DB_MBOT[key][posicion], ''))
-						console.log(window.location.href)
-						if(window.location.href.toString().includes(queryBusqueda))
-							window.location.href = window.location.href + itemBuscar
-						else
-							window.location.href = window.location.href + queryBusqueda + itemBuscar
-						break;
-					case 'quitar':
-						window.location.href = "https://www.google.com"
-						return randomAnswer('saludo-despedida')
-				}
-				return randomAnswer('respuesta-afirmacion de accion')
+def pausa(mensaje="[PAUSA]"):
+		input(mensaje)
 			
-			default: //respuesta por defecto
-				respuesta = returnAnswer(sentence_info)
-				if(respuesta){
-					final_answer.push(respuesta)
-				}else{
-					final_answer.push(randomAnswer('respuesta-desconocido'))
-				}
-		}
-	}
-	console.log("=>>", final_answer)
-	mensaje = filterString(final_answer.join(', '))
-	mensaje = mensaje[0].toUpperCase() + mensaje.substr(1) + '.'
-	return mensaje
-}
-
-//Añadir un mensaje en la caja de conversacion.
-function addMessageIntoBox(nombre, color, mensaje, emoji="em em-no_mouth"){
-	nombre = ''//"<span style='position:relative;color:" + color + "'>" + nombre + " </span>"
-	mensaje = "<span>" + mensaje +"</span>"
-	emoji = 		 "<div style='display: inline-block;' class='"+ emoji +"'></div>"
-	mensajeFormato = "<div style='display: inline-block;width:200px' id='mensaje'>"+ nombre + mensaje + "</div>"
-	msj = document.createElement("div")
-	msj.innerHTML = emoji
-	msj.innerHTML += mensajeFormato
-	msj.className = "mensajeAnimacion"
-	messageBox.appendChild(msj)
-}
-
-//Vaciar la caja de conversacion.
-function emptyMessageBox(){
-		messageBox.innerHTML = ''
-}
-
-//Manejar un intervalo de inactividad para enviar un mensaje automatico
-var silenceInterval = setInterval(function(){reply()}, mutedTime);
-
-//reply un Mensaje y Devolver una Respuesta (Funcion principal)
-function reply(){
-		var userMessages = userInputBox.value.toLowerCase();
-		//Si la cantidad de mensajes excede al limite de la caja se limpia.
-		if(actualMessageAmount > maxMessageBox){
-			emptyMessageBox()
-			actualMessageAmount=0
-		}
+class SegmentProcessor():
+	def __init__(self, *args, **kwargs):
+		self.DEBUG = True
+		self.total_offset_control = 0
+		self.instruction_cout = 0
+		self.start_offset = 0
+		self.end_offset = 0
 		
-		//El usuario ya dijo algo, no hay necesidad de llamar mas la atención.
-		window.clearInterval(silenceInterval)
-		//Se agrega el mensaje del usuario a la caja de conversación.
-		if(userMessages!='')
-			addMessageIntoBox('Usuario', 'purple', userInputBox.value, emoji="em em-smiley")
-		else
-			userMessages = '*silencio*';
-		typingNotification.innerHTML = "Escribiendo..";
-		setTimeout(function(){
-						//Se muestra la notificacion simulada de escritura.
-						typingNotification.innerHTML = "...";
-						addMessageIntoBox('MinBot', 'red', processMessage(userMessages), emoji="em em-robot_face")
-					 }, 
-					  responseTime)
-		actualMessageAmount++;
+	def dmsg(self, string):
+		#Debug message
+		if(self.DEBUG):
+			print(string)
+			
+	def takeParams(self, string):
+		#Return tuple from string (x,y,..)
+		regex = re.findall('\((.*?)\)', string)
+		if(',' in string):
+			params = [i.strip() for i in regex[0].split(',')]
+			#self.dmsg(string + "\nParams: " + str(params))
+			return [i for i in params]
+		else:
+			return regex
 	
-}
+	def byteBlockProcess(self, bytes_segment):
+		#Process Hexadecimal (list)block and return in unique number list
+		return [str(hex(bhex))[2:] for bhex in bytes_segment]
+		
+	def sumHexBlock(self, hex_block):
+		#Sum hexadecimal (list)block list and return total sum
+		return int("".join(hex_block), 16)
+	
+	def sumSegment(self, bytes_segment, byte_order=False):
+		#take byte segment direct from block and return sum
+		segment = self.byteBlockProcess(bytes_segment)
+		if(byte_order is 'little_endian'):
+			segment.reverse()
+		else:
+			#is big endian
+			pass
+		return self.sumHexBlock(segment)
+			
+	def processInstruction(self, info, file_chunck): 
+		#return a slice of indexs start to end if found a coincidence
+		actual_instruction = info['script'].split('\n')[self.instruction_cout]
+		instruction_args = self.takeParams(actual_instruction)
+		real_offset_position = (self.total_offset_control - len(file_chunck))
+		if('SIGNATURE' in actual_instruction):
+			#Detect start and end of file
+			# ~ self.dmsg("Procesando Instruccion SIGNATURE")
+			signatureKey = instruction_args[0]
+			signature = info[signatureKey]
+			if(signature in file_chunck):
+				indexSignature = file_chunck.index(signature)
+				if(signatureKey == 'start'):
+					self.start_offset = indexSignature
+					self.dmsg("Firma start %s encontrada en offset %d->%s"%(
+							signature, 
+							(real_offset_position + self.start_offset), 
+							hex(self.start_offset) )
+							)
+					self.instruction_cout+=1
+					return True
+				elif(signatureKey == 'end'):
+					self.end_offset = indexSignature + len(signature)
+					self.dmsg("Firma end %s encontrada en offset %d->%s  "%(
+							signature, 
+							(real_offset_position + self.end_offset), 
+							hex(self.end_offset))
+							)
+						
+					self.instruction_cout+=1
+					return slice(self.start_offset, self.end_offset)
+				
+		elif('FSEGMENT' in actual_instruction):
+			self.instruction_cout+=1
+			self.dmsg("Procesando Instruccion FSEGMENT")
+			block_to_process = file_chunck[int(instruction_args[0]):int(instruction_args[1])+1]
+			byteOrder = 'little_endian' if('big_endian' not in instruction_args)\
+										else 'big_endian' #Detect Little Endian conversion 
+			total_offsets = self.sumSegment(block_to_process, 
+											byte_order=byteOrder)
+			self.end_offset = total_offsets
+			return slice(self.start_offset, self.end_offset)
+		return None
+				
+	def processChunck(self, file_chunck, info, aux_length = 0):
+		self.total_offset_control+= aux_length
+		for i in range(len(info['script'].split('\n'))):
+			process = self.processInstruction(info , file_chunck)
+			if(type(process) == slice):
+				return process
+	
+	def reset(self):
+		self.start_offset = 0
+		self.end_offset = 0
+		self.instruction_cout = 0
+		
+class FileManager():
+	def __init__(self, *args, **kargs):
+		pass
+
+	def printFileInfo(self, file_name):
+		#return File size in MB
+		try:
+			print("="*30)
+			print("Analizyng...")
+			print("File Name:%s"%file_name)
+			print("File Size:%3.2f MB"%float(os.stat(file_name).st_size/(10**6)))
+			print("="*30)
+		except(FileNotFoundError):
+			print("File not found")
+	
+	def createDirectory(self, file_path_name):
+		#Create directory if not exists
+		if(os.path.exists(file_path_name) is not True):
+			os.mkdir(file_path_name)
+		return file_path_name
+			
+	def getExtensionFileOfName(self, file_name):
+		return file_name.split(".")[1]
+		
+	def getNameFileOfName(self, file_name):
+		return file_name.split(".")[0]
+		
+	def saveFile(self, file_name,  info):
+		#Save file in a new directory with the same name
+		with open(file_name, "wb") as saveFile:
+			saveFile.write(info)
+	
+	def openFile(self, file_name):
+		try:
+			return open(file_name, "rb")
+		except(FileNotFoundError):
+			print("File not found")
+			return False
+
+class FScanner(FileManager):
+	def __init__(self, *args, **kargs):
+		self.info_files = SCRIPT_FILE
+		
+	def scanFile(self, file_name, extension=None): 
+		file_ = self.openFile(file_name)
+		self.printFileInfo(file_name)
+		file_extension = self.getExtensionFileOfName(file_name) if extension is None else extension
+		file_info = self.info_files[file_extension]
+
+		buffer_ = bytearray()
+		total_extract = 0
+		process = SegmentProcessor()
+		time_start = time.time()
+		for chunck in file_:
+			buffer_.extend(chunck)
+			signature_coincidences = buffer_.count(file_info['start']) 
+			for coincidences in range(signature_coincidences ):
+				"""Este bucle permite verificar si hay mas de 
+					dos firmas en una sola iteracion y analizarlas."""
+				result = process.processChunck(
+											buffer_, 
+											file_info, 
+											aux_length =(len(chunck) if coincidences is 0 else 0)
+											)
+				if(type(result) == slice):
+					#save result
+					only_file_name = self.getNameFileOfName(file_name)
+					file_path = self.createDirectory(only_file_name)
+					file_name_ = only_file_name + "_" + str(result.start) + "_" + str(result.stop) 
+					file_path = (file_path + "/" ) + (file_name_ + "." + file_extension)
+					self.saveFile(file_path, buffer_[result])
+					del buffer_[:process.end_offset]
+					process.reset()
+					total_extract+=1
+		print("\n\nTotal files:", total_extract)
+		print("Finish in %.1f secs"%(time.time() - time_start))
+				
+
+if __name__ == "__main__":
+	scan = FScanner()
+	scan.scanFile("test_imagenes.png", extension='png')
